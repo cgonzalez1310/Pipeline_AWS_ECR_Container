@@ -1,0 +1,127 @@
+# Name of the GitHub Actions workflow shown in the Actions tab
+name: IaC Terraform XXX
+
+# Event that triggers the workflow
+on:
+  push: # Run workflow when code is pushed
+    branches:
+      - XXXXX # Only trigger when pushing to the develop branch
+    paths:
+      - 'XXXX/**' # Only trigger if files inside DEV folder change
+
+# Global environment variables available to all jobs
+env:
+  PROJECT: ${{ github.event.repository.name }} # Repository name used as project identifier
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID_CAPP_XXX }} # AWS access key stored in GitHub Secrets
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY_CAPP_XXX }} # AWS secret key stored in GitHub Secrets
+  AWS_REGION: ${{ secrets.AWS_REGION }} # AWS region retrieved from secrets
+  ECR_REPOSITORY: xxxxxxxxx # Name of the Amazon ECR repository where Docker images will be pushed
+
+# Jobs section defining the tasks executed in the workflow
+jobs:
+
+  # Job responsible for building the container and deploying Terraform
+  Despliegue_Terraform:
+
+    runs-on: xxxxx # Use a self-hosted runner named cicd-ikigii
+
+    # Only run the job if the commit message contains 'deploy-dev'
+    if: contains(github.event.head_commit.message, 'deploy-xxx')
+
+    steps:
+
+      # Step: clone the repository into the runner workspace
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          ref: develop # Ensure the develop branch is checked out
+
+      # Step: configure AWS CLI credentials for the workflow
+      - name: Configurando credenciales para AWS
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_CAPP_XXX}} # AWS access key
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_CAPP_XXX }} # AWS secret key
+          aws-region: ${{ secrets.AWS_REGION }} # AWS region configuration
+
+      # Step: authenticate Docker with Amazon ECR
+      - name: Login to Amazon ECR
+        id: login-ecr # Assign ID to reference outputs later
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Step: build Docker image from the Contenedor directory
+      - name: Build Docker image
+        working-directory: ./Contenedor # Change working directory to container folder
+        shell: bash # Use bash shell
+        run: |
+          TAG="loan_service_pricing_${GITHUB_SHA::7}"  #Create image tag using short commit SHA
+          echo "Using image tag: ${TAG}" # Print tag for debugging/logging
+          docker build -t "${ECR_REPOSITORY}:${TAG}" . # Build Docker image with repository name and tag
+
+      # Step: tag the image with the ECR registry and push it
+      - name: Tag and push Docker image to ECR
+        shell: bash
+         # Get ECR registry URL from login step output
+         # Recreate the same Docker tag
+         # Tag image with full ECR path
+         # Push image to ECR repository
+         # Export the full Docker image URI as an environment variable for later steps
+         # Print the image URI in logs
+        run: |
+          ECR_REGISTRY="${{ steps.login-ecr.outputs.registry }}" 
+          TAG="loan_service_pricing_${GITHUB_SHA::7}"
+
+          docker tag "${ECR_REPOSITORY}:${TAG}" "${ECR_REGISTRY}/${ECR_REPOSITORY}:${TAG}" 
+          docker push "${ECR_REGISTRY}/${ECR_REPOSITORY}:${TAG}"
+
+         
+          echo "IMAGE_MICROSERVICE=${ECR_REGISTRY}/${ECR_REPOSITORY}:${TAG}" >> $GITHUB_ENV
+          echo "IMAGE_MICROSERVICE=${ECR_REGISTRY}/${ECR_REPOSITORY}:${TAG}"
+
+      # Step: verify that the image variable is available
+      - name: Debug image var
+        shell: bash
+        run: |
+          echo "Terraform will use image: $IMAGE_MICROSERVICE" # Print image URI used by Terraform
+
+      # Step: short delay (sometimes used to ensure registry consistency)
+      - name: Sleep for 5 seconds
+        run: sleep 5s
+        shell: bash
+
+      # Step: initialize Terraform backend and providers
+      - name: Terraform Init
+        working-directory: ./XXX # Navigate to Terraform DEV environment directory
+        run: terraform init -input=false # Initialize Terraform without interactive prompts
+
+      # Step: generate Terraform execution plan
+      - name: Terraform Plan
+        working-directory: ./XXX
+        shell: bash
+        run: |
+             terraform plan \ # Create Terraform execution plan
+              -input=false \ # Disable interactive input
+              -out="main.tfplan" \ # Save plan to file for later apply
+              -var="image_microservice=${IMAGE_MICROSERVICE}"  # Pass the Docker image URI as a Terraform variable
+
+      # Step: apply Terraform plan to deploy infrastructure
+      - name: Terraform Apply
+        working-directory: ./XXX
+        run: terraform apply -auto-approve "main.tfplan" # Apply the previously generated plan automatically
+
+      # Step: clean unused Docker resources to free disk space
+      - name: Docker cleanup (safe)
+        if: always() # Run even if previous steps fail
+        shell: bash
+        run: |
+          echo "Cleaning unused Docker resources..." # Log message
+          docker image prune -af # Remove unused Docker images
+          docker builder prune -af # Remove unused Docker build cache
+
+      # Step: clean the GitHub Actions workspace
+      - name: Clean workspace
+        if: always() # Ensure cleanup runs regardless of job status
+        shell: bash
+        run: |
+          echo "Limpiando workspace..." # Log message in Spanish: cleaning workspace
+          rm -rf "${{ github.workspace }}"/* # Remove all files from workspace
