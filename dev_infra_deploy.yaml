@@ -13,7 +13,7 @@ env:
 
 jobs:
   deploy_terraform:
-    runs-on: cicd-ikigii
+    runs-on: xxxxxx
     if: contains(github.event.head_commit.message, 'deploy-dev') || github.event_name == 'workflow_dispatch'
 
     steps:
