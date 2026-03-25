@@ -1,0 +1,65 @@
+name: IaC Terraform DEV
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - 'terraform/DEV/**'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+
+jobs:
+  deploy_terraform:
+    runs-on: cicd-ikigii
+    if: contains(github.event.head_commit.message, 'deploy-dev') || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_CAPP_DEV }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_CAPP_DEV }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Read current image URI from SSM
+        id: image
+        shell: bash
+        run: |
+          IMAGE_URI=$(aws ssm get-parameter \
+            --name "/appian/gemini/dev/image_uri" \
+            --query 'Parameter.Value' \
+            --output text)
+
+          echo "IMAGE_URI=${IMAGE_URI}" >> $GITHUB_ENV
+          echo "Using image: ${IMAGE_URI}"
+
+      - name: Terraform Init
+        working-directory: ./terraform/DEV
+        run: terraform init -input=false
+
+      - name: Terraform Plan
+        working-directory: ./terraform/DEV
+        shell: bash
+        run: |
+          terraform plan \
+            -input=false \
+            -out="main.tfplan" \
+            -var="image_uri=${IMAGE_URI}"
+
+      - name: Terraform Apply
+        working-directory: ./terraform/DEV
+        run: terraform apply -auto-approve "main.tfplan"
+
+      - name: Clean workspace
+        if: always()
+        shell: bash
+        run: |
+          rm -rf "${{ github.workspace }}"/*
