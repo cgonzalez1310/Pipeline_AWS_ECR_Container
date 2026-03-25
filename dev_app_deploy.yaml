@@ -9,11 +9,11 @@ on:
 
 env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
-  ECR_REPOSITORY: gemini-client
+  ECR_REPOSITORY: XXXXXXX
 
 jobs:
   build_and_push:
-    runs-on: cicd-ikigii
+    runs-on: XXXXXX
     if: contains(github.event.head_commit.message, 'deploy-dev')
 
     outputs:
@@ -67,7 +67,7 @@ jobs:
         shell: bash
         run: |
           aws ssm put-parameter \
-            --name "/appian/gemini/dev/image_uri" \
+            --name "/xxxx/xxxxx/dev/image_uri" \
             --type "String" \
             --value "${IMAGE_URI}" \
             --overwrite
